@@ -1,0 +1,287 @@
+<!-- static/index.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Call Center - Voice</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 min-h-screen text-white">
+    <div class="container mx-auto p-8 max-w-4xl">
+        <!-- Header -->
+        <div class="mb-8 text-center">
+            <h1 class="text-5xl font-bold mb-2">🤖 AI Call Center</h1>
+            <p class="text-gray-300">Говорите с AI голосом</p>
+        </div>
+
+        <!-- Status -->
+        <div class="grid grid-cols-3 gap-4 mb-8">
+            <div class="bg-gray-800/50 backdrop-blur rounded-xl p-4 border border-gray-700 text-center">
+                <div id="whisper-status" class="text-3xl mb-2">⏳</div>
+                <p class="text-sm text-gray-400">Whisper STT</p>
+            </div>
+            <div class="bg-gray-800/50 backdrop-blur rounded-xl p-4 border border-gray-700 text-center">
+                <div id="mistral-status" class="text-3xl mb-2">⏳</div>
+                <p class="text-sm text-gray-400">Mistral AI</p>
+            </div>
+            <div class="bg-gray-800/50 backdrop-blur rounded-xl p-4 border border-gray-700 text-center">
+                <div id="silero-status" class="text-3xl mb-2">⏳</div>
+                <p class="text-sm text-gray-400">Silero TTS</p>
+            </div>
+        </div>
+
+        <!-- Voice Chat -->
+        <div class="bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700 p-8">
+            <div id="chat-messages" class="h-96 overflow-y-auto mb-6 space-y-4 p-4 bg-gray-900/50 rounded-lg">
+                <div class="text-center text-gray-500 text-sm">
+                    Нажмите на кнопку микрофона и начните говорить
+                </div>
+            </div>
+
+            <!-- Voice Controls -->
+            <div class="flex flex-col items-center gap-4">
+                <div id="recordingStatus" class="text-center mb-2 h-6">
+                    <span id="statusText" class="text-gray-400"></span>
+                </div>
+                
+                <button 
+                    id="recordBtn"
+                    class="w-24 h-24 rounded-full bg-red-600 hover:bg-red-700 disabled:bg-gray-600 transition-all transform hover:scale-105 active:scale-95 shadow-lg"
+                    onclick="toggleRecording()"
+                >
+                    <span class="text-4xl">🎤</span>
+                </button>
+                
+                <p id="recordHint" class="text-sm text-gray-400">Нажмите чтобы начать запись</p>
+            </div>
+
+            <!-- Audio Player (hidden) -->
+            <audio id="audioPlayer" class="hidden"></audio>
+        </div>
+
+        <!-- Text Alternative -->
+        <div class="bg-gray-800/50 backdrop-blur rounded-xl border border-gray-700 p-6 mt-6">
+            <h3 class="text-xl font-bold mb-4">💬 Или напишите текстом</h3>
+            <div class="flex gap-2">
+                <input 
+                    type="text" 
+                    id="textInput" 
+                    placeholder="Введите сообщение..."
+                    class="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    onkeypress="if(event.key === 'Enter') sendTextMessage()"
+                >
+                <button 
+                    onclick="sendTextMessage()"
+                    class="bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded-lg font-semibold"
+                >
+                    Отправить
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        let callId = 'web-' + Date.now();
+
+        // Проверка здоровья
+        async function checkHealth() {
+            try {
+                const response = await fetch('http://localhost:8000/api/health');
+                const data = await response.json();
+                
+                document.getElementById('whisper-status').textContent = 
+                    data.whisper === 'ready' ? '✅' : '❌';
+                document.getElementById('mistral-status').textContent = 
+                    data.mistral === 'ready' ? '✅' : '❌';
+                document.getElementById('silero-status').textContent = 
+                    data.silero === 'ready' ? '✅' : '❌';
+            } catch (error) {
+                console.error('Health check failed:', error);
+            }
+        }
+
+        // Запись аудио
+        async function toggleRecording() {
+            if (!isRecording) {
+                await startRecording();
+            } else {
+                await stopRecording();
+            }
+        }
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                    await sendVoiceMessage(audioBlob);
+                    
+                    // Останавливаем stream
+                    stream.getTracks().forEach(track => track.stop());
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+
+                // UI updates
+                document.getElementById('recordBtn').classList.add('animate-pulse', 'bg-red-700');
+                document.getElementById('statusText').textContent = '🔴 Запись...';
+                document.getElementById('recordHint').textContent = 'Нажмите чтобы остановить';
+
+            } catch (error) {
+                console.error('Ошибка доступа к микрофону:', error);
+                alert('Не удалось получить доступ к микрофону. Разрешите доступ в настройках браузера.');
+            }
+        }
+
+        async function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+
+                // UI updates
+                document.getElementById('recordBtn').classList.remove('animate-pulse', 'bg-red-700');
+                document.getElementById('statusText').textContent = '';
+                document.getElementById('recordHint').textContent = 'Нажмите чтобы начать запись';
+            }
+        }
+
+        async function sendVoiceMessage(audioBlob) {
+            // Добавляем сообщение пользователя
+            addMessage('🎤 Голосовое сообщение...', 'user');
+            
+            // Показываем индикатор обработки
+            const loadingId = addMessage('⏳ Обрабатываю...', 'assistant', true);
+
+            try {
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.webm');
+                formData.append('call_id', callId);
+
+                const response = await fetch('http://localhost:8000/api/voice-message', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error('Ошибка сервера');
+                }
+
+                // Получаем текст из заголовков (декодируем из base64)
+                const userTextB64 = response.headers.get('X-User-Text');
+                const aiTextB64 = response.headers.get('X-AI-Response');
+                
+                // Декодируем base64 в UTF-8
+                const decodeBase64 = (str) => {
+                    if (!str) return '';
+                    const binary = atob(str);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) {
+                        bytes[i] = binary.charCodeAt(i);
+                    }
+                    return new TextDecoder('utf-8').decode(bytes);
+                };
+                
+                const userText = decodeBase64(userTextB64);
+                const aiText = decodeBase64(aiTextB64);
+
+                // Удаляем loading
+                document.getElementById(loadingId).remove();
+
+                // Обновляем сообщение пользователя
+                const lastUserMsg = document.querySelector('[data-type="user"]:last-of-type');
+                if (lastUserMsg && userText) {
+                    lastUserMsg.querySelector('.message-text').textContent = userText;
+                }
+
+                // Добавляем ответ AI
+                addMessage(aiText, 'assistant');
+
+                // Проигрываем аудио ответ
+                const responseAudioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(responseAudioBlob);
+                const audioPlayer = document.getElementById('audioPlayer');
+                audioPlayer.src = audioUrl;
+                audioPlayer.play();
+
+            } catch (error) {
+                document.getElementById(loadingId).remove();
+                addMessage('❌ Ошибка: ' + error.message, 'error');
+            }
+        }
+
+        async function sendTextMessage() {
+            const input = document.getElementById('textInput');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            addMessage(message, 'user');
+            input.value = '';
+            
+            const loadingId = addMessage('⏳ Думаю...', 'assistant', true);
+            
+            try {
+                const response = await fetch('http://localhost:8000/api/text-only', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text: message, call_id: callId})
+                });
+                
+                const data = await response.json();
+                document.getElementById(loadingId).remove();
+                addMessage(data.ai_response, 'assistant');
+                
+            } catch (error) {
+                document.getElementById(loadingId).remove();
+                addMessage('❌ Ошибка: ' + error.message, 'error');
+            }
+        }
+
+        function addMessage(text, type, isLoading = false) {
+            const container = document.getElementById('chat-messages');
+            const messageId = 'msg-' + Date.now();
+            
+            const placeholder = container.querySelector('.text-center');
+            if (placeholder) placeholder.remove();
+            
+            const div = document.createElement('div');
+            div.id = messageId;
+            div.setAttribute('data-type', type);
+            div.className = `flex ${type === 'user' ? 'justify-end' : 'justify-start'}`;
+            
+            let bgColor;
+            if (type === 'user') bgColor = 'bg-purple-600';
+            else if (type === 'error') bgColor = 'bg-red-600/50';
+            else bgColor = 'bg-gray-700';
+            
+            div.innerHTML = `
+                <div class="${bgColor} text-white rounded-lg px-4 py-3 max-w-[80%] ${isLoading ? 'animate-pulse' : ''}">
+                    <span class="message-text">${text}</span>
+                </div>
+            `;
+            
+            container.appendChild(div);
+            container.scrollTop = container.scrollHeight;
+            
+            return messageId;
+        }
+
+        // Инициализация
+        checkHealth();
+        setInterval(checkHealth, 10000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  ai-callcenter:
+    build: .
+    container_name: ai-callcenter
+    ports:
+      - "8000:8000"
+    environment:
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+    volumes:
+      - ./static:/app/static
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
