@@ -35,11 +35,11 @@ device = torch.device('cpu')
 torch.set_num_threads(4)
 
 model, _ = torch.hub.load(
-    repo_or_dir='snakers4/silero-models',
+    repo_or_dir='/silero-models',
     model='silero_tts',
     language='ru',
     speaker='v3_1_ru',
-    trust_repo=True
+    source='local'
 )
 model.to(device)
 print("✅ Silero TTS загружен")

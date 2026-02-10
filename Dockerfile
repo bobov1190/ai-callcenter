@@ -19,11 +19,14 @@ RUN pip install --no-cache-dir \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# --- Скачиваем Silero TTS во время сборки (кэшируется в слое) ---
+# Клонируем Silero через git (git-протокол, без GitHub REST API — нет rate limit)
+RUN git clone --depth 1 https://github.com/snakers4/silero-models /silero-models
+
+# Скачиваем веса модели во время сборки (source='local' — пропускает API валидацию)
 RUN python -c "\
 import torch; \
-torch.hub.load('snakers4/silero-models', 'silero_tts', language='ru', speaker='v3_1_ru', trust_repo=True); \
-print('Silero TTS downloaded OK')"
+model, _ = torch.hub.load('/silero-models', 'silero_tts', language='ru', speaker='v3_1_ru', source='local'); \
+print('Silero TTS ready')"
 
 # Копируем код
 COPY . .
