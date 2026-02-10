@@ -1,29 +1,27 @@
 FROM python:3.11-slim
 
-# Установка системных зависимостей
+WORKDIR /app
+
+# Системные зависимости: ffmpeg нужен для faster-whisper
 RUN apt-get update && apt-get install -y \
-    build-essential \
     ffmpeg \
+    libsndfile1 \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Рабочая директория
-WORKDIR /app
+# Сначала ставим CPU-версию torch отдельно (значительно меньше по размеру)
+RUN pip install --no-cache-dir \
+    torch==2.5.1 \
+    torchaudio==2.5.1 \
+    --index-url https://download.pytorch.org/whl/cpu
 
-# Копирование зависимостей
+# Копируем и устанавливаем остальные зависимости
 COPY requirements.txt .
-
-# Установка Python зависимостей
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копирование проекта
+# Копируем код приложения
 COPY . .
 
-# Создание директории для статики
-RUN mkdir -p static
-
-# Открытие порта
 EXPOSE 8000
 
-# Команда запуска
 CMD ["python", "main.py"]
