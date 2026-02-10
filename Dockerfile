@@ -2,24 +2,30 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Системные зависимости: ffmpeg нужен для faster-whisper
+# Системные зависимости
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsndfile1 \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Сначала ставим CPU-версию torch отдельно (значительно меньше по размеру)
+# CPU-версия torch
 RUN pip install --no-cache-dir \
     torch==2.5.1 \
     torchaudio==2.5.1 \
     --index-url https://download.pytorch.org/whl/cpu
 
-# Копируем и устанавливаем остальные зависимости
+# Остальные зависимости
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем код приложения
+# --- Скачиваем Silero TTS во время сборки (кэшируется в слое) ---
+RUN python -c "\
+import torch; \
+torch.hub.load('snakers4/silero-models', 'silero_tts', language='ru', speaker='v3_1_ru', trust_repo=True); \
+print('Silero TTS downloaded OK')"
+
+# Копируем код
 COPY . .
 
 EXPOSE 8000
